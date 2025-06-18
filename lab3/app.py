@@ -5,6 +5,7 @@ import datetime
 import urllib.request
 from pathlib import Path
 
+# Set page config
 st.set_page_config(page_title="VCI/TCI/VHI Analysis", layout="wide")
 
 # DEFINE PATHS - Creates a 'datasets' folder in the same directory as the script
@@ -13,6 +14,7 @@ path = script_dir / 'datasets'
 path.mkdir(exist_ok=True)
 
 def list_datasets():
+    """List all dataset files in the directory"""
     if path.exists():
         datasets_list = [f.name for f in path.iterdir() if f.is_file() and f.suffix == '.csv']
         datasets_list.sort(key=lambda x: int(x.split("_")[1].lstrip("ID")) if "_ID" in x else 0)
@@ -20,6 +22,7 @@ def list_datasets():
     return []
 
 def get_datasets():
+    """Download datasets from NOAA"""
     now = datetime.datetime.now()
     date_and_time = now.strftime("%d-%m-%Y-%H_%M_%S")
     
@@ -49,6 +52,7 @@ def get_datasets():
     return True
 
 def clear_datasets():
+    """Delete all dataset files"""
     try:
         datasets = list_datasets()
         if not datasets:
@@ -66,11 +70,13 @@ def clear_datasets():
         return False
 
 def update_datasets():
+    """Clear existing datasets and download new ones"""
     if clear_datasets():
         return get_datasets()
     return False
 
 def get_region_mapping():
+    """Get mapping of region IDs to Ukrainian names"""
     region_mapping = {
         1: "Черкаська область",
         2: "Чернігівська область", 
@@ -104,7 +110,7 @@ def get_region_mapping():
 
 @st.cache_data
 def load_all_data():
-    # LOAD AND COMBINE ALL CSV FILES INTO A SINGLE DATAFRAME
+    """LOAD AND COMBINE ALL CSV FILES INTO A SINGLE DATAFRAME"""
     datasets = list_datasets()
     if not datasets:
         return None
@@ -185,7 +191,7 @@ def load_all_data():
     return None
 
 def reset_filters():
-    # RESET ALL FILTER CONTROLS TO THEIR INITIAL STATE 
+    """RESET ALL FILTER CONTROLS TO THEIR INITIAL STATE"""
     default_values = {
         'selected_metric': 'VHI',
         'selected_region': None,
@@ -204,7 +210,7 @@ def reset_filters():
     st.rerun()
 
 def initialize_session_state(df=None):
-    # INITIALIZE SESSION STATE WITH DEFAULT VALUES
+    """INITIALIZE SESSION STATE WITH DEFAULT VALUES"""
     if 'filters_initialized' not in st.session_state:
         st.session_state.filters_initialized = True
         
@@ -230,7 +236,7 @@ def initialize_session_state(df=None):
 # MAIN APP LAYOUT
 st.title("VCI/TCI/VHI Analysis Dashboard")
 
-# For debugging
+# Show current working directory info for debugging
 with st.expander("📁 Path Information (for debugging)"):
     st.write(f"**Script directory:** `{script_dir}`")
     st.write(f"**Datasets directory:** `{path}`")
@@ -238,6 +244,7 @@ with st.expander("📁 Path Information (for debugging)"):
     if path.exists():
         st.write(f"**Files in datasets directory:** {len(list(path.iterdir()))} items")
 
+# Create two columns
 col1, col2 = st.columns([1, 2])
 
 # LOAD DATA - Make it available for controls
@@ -382,7 +389,7 @@ with col1:
         else:
             st.info("📅 Default sorting: Chronological (Year, Week)")
         
-        # RESET FILTERS BUTTON
+        # RESET FILTERS BUTTON - Moved under sorting options
         st.markdown("---")
         if st.button("🔄 Reset All Filters", 
                      help="Reset all analysis controls to their initial values", 
@@ -565,10 +572,10 @@ with col2:
                 ].copy()
                 
                 if not region_data.empty:
-                    # SORT BY YEAR AND WEEK FOR PROPER TIMELINE (NOT affected by asc/desc sorting options)
+                    # SORT BY YEAR AND WEEK FOR PROPER TIMELINE (NOT affected by sorting options)
                     region_data = region_data.sort_values(['Year', 'Week']).reset_index(drop=True)
                     
-                    # Create the line chart (plotly bcuz I like it more than seaborn)
+                    # Create the line chart
                     import plotly.express as px
                     import plotly.graph_objects as go
                     
