@@ -5,16 +5,18 @@ import datetime
 import urllib.request
 from pathlib import Path
 
-# Set page config
 st.set_page_config(page_title="VCI/TCI/VHI Analysis", layout="wide")
 
-# DEFINE PATHS - Creates a 'datasets' folder in the same directory as the script
+# Uses relative path
+# Creates a 'datasets' folder in the same directory as the script
 script_dir = Path(__file__).parent if hasattr(Path(__file__), 'parent') else Path.cwd()
 path = script_dir / 'datasets'
+
+# Ensure directory exists
 path.mkdir(exist_ok=True)
 
 def list_datasets():
-    """List all dataset files in the directory"""
+    # List all dataset files in the directory
     if path.exists():
         datasets_list = [f.name for f in path.iterdir() if f.is_file() and f.suffix == '.csv']
         datasets_list.sort(key=lambda x: int(x.split("_")[1].lstrip("ID")) if "_ID" in x else 0)
@@ -22,7 +24,7 @@ def list_datasets():
     return []
 
 def get_datasets():
-    """Download datasets from NOAA"""
+    # Download datasets from NOAA
     now = datetime.datetime.now()
     date_and_time = now.strftime("%d-%m-%Y-%H_%M_%S")
     
@@ -38,6 +40,7 @@ def get_datasets():
             text = wp.read()
             filename = f'NOAA_ID{str(i)}_{date_and_time}.csv'
             
+            # Use pathlib for file operations
             filepath = path / filename
             with open(filepath, 'wb') as out:
                 out.write(text)
@@ -52,7 +55,7 @@ def get_datasets():
     return True
 
 def clear_datasets():
-    """Delete all dataset files"""
+    # Delete all dataset files
     try:
         datasets = list_datasets()
         if not datasets:
@@ -110,7 +113,7 @@ def get_region_mapping():
 
 @st.cache_data
 def load_all_data():
-    """LOAD AND COMBINE ALL CSV FILES INTO A SINGLE DATAFRAME"""
+    # Load and combine all CSV files into a single dataframe
     datasets = list_datasets()
     if not datasets:
         return None
@@ -129,12 +132,11 @@ def load_all_data():
             region_id = int(file.split("_")[1].lstrip("ID"))
             region_name = region_mapping.get(region_id, f"Region_{region_id}")
             
-            # Read CSV file with proper handling of HTML content
+            # Read CSV file with proper handling of HTML header junk - using pathlib
             headers = ['Year', 'Week', 'SMN', 'SMT', 'VCI', 'TCI', 'VHI']
             filepath = path / file
             df = pd.read_csv(filepath, header=1, names=headers, index_col=False)
             
-            # Create ID column and set as index (following Lab 2 approach)
             df['ID'] = range(1, len(df) + 1)
             df.set_index('ID', inplace=True)
             
@@ -142,14 +144,15 @@ def load_all_data():
             if len(df) > 0:
                 df.drop(len(df), inplace=True, errors='ignore')
             
-            # Fix the first year entry (copying from second row as in Lab 2)
+            # Fix the first year entry (just copying from second row)
             if len(df) >= 2:
                 df.at[1, 'Year'] = df.at[2, 'Year']
             
-            # DATA CLEANING - Remove invalid values
+            # Remove rows with invalid VHI, VCI, TCI values + dropna to be super certain
             df = df[df['VHI'] != -1]
             df = df[df['VCI'] != -1]  
             df = df[df['TCI'] != -1]
+            
             df = df.dropna()
             
             # Convert numeric columns to proper types
@@ -157,6 +160,7 @@ def load_all_data():
             for col in numeric_cols:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
+            # Remove any rows that couldn't be converted to numeric
             df = df.dropna()
             
             # Add region information
@@ -164,7 +168,7 @@ def load_all_data():
             df['Region_ID'] = region_id
             df['Region'] = region_name
             
-            # Select only needed columns
+            # Select needed columns
             df = df[['Year', 'Week', 'Region_ID', 'Region', 'VCI', 'TCI', 'VHI']]
             
             combined_data.append(df)
@@ -175,10 +179,11 @@ def load_all_data():
             continue
     
     if combined_data:
-        # COMBINE ALL DATAFRAMES
+        # Combine all dataframes
         final_df = pd.concat(combined_data, ignore_index=True)
-        final_df = final_df.sort_values(['Year', 'Week', 'Region_ID']).reset_index(drop=True)
         
+        final_df = final_df.sort_values(['Year', 'Week', 'Region_ID']).reset_index(drop=True)
+
         # Final data validation
         final_df = final_df[(final_df['Year'] >= 1981) & (final_df['Year'] <= 2024)]
         final_df = final_df[(final_df['Week'] >= 1) & (final_df['Week'] <= 52)]
@@ -191,7 +196,8 @@ def load_all_data():
     return None
 
 def reset_filters():
-    """RESET ALL FILTER CONTROLS TO THEIR INITIAL STATE"""
+    # Reset all filter controls to default
+    # Initialize session state keys with default values
     default_values = {
         'selected_metric': 'VHI',
         'selected_region': None,
@@ -209,8 +215,9 @@ def reset_filters():
     st.success("🔄 All filters have been reset to their initial values!")
     st.rerun()
 
+# Initialize session state for filters if not exists
 def initialize_session_state(df=None):
-    """INITIALIZE SESSION STATE WITH DEFAULT VALUES"""
+    # Initialize session state with default values
     if 'filters_initialized' not in st.session_state:
         st.session_state.filters_initialized = True
         
@@ -236,7 +243,7 @@ def initialize_session_state(df=None):
 # MAIN APP LAYOUT
 st.title("VCI/TCI/VHI Analysis Dashboard")
 
-# Show current working directory info for debugging
+# Current working directory info
 with st.expander("📁 Path Information (for debugging)"):
     st.write(f"**Script directory:** `{script_dir}`")
     st.write(f"**Datasets directory:** `{path}`")
@@ -244,25 +251,23 @@ with st.expander("📁 Path Information (for debugging)"):
     if path.exists():
         st.write(f"**Files in datasets directory:** {len(list(path.iterdir()))} items")
 
-# Create two columns
 col1, col2 = st.columns([1, 2])
 
-# LOAD DATA - Make it available for controls
 current_datasets = list_datasets()
 df = None
 if current_datasets:
     with st.spinner("Loading data..."):
         df = load_all_data()
 
-# Initialize session state
 initialize_session_state(df)
 
 with col1:
     st.header("Control Panel")
     
-    # DATASET MANAGEMENT SECTION
+    # Dataset management section
     st.subheader("Dataset Management")
     
+    # Check current datasets
     current_datasets = list_datasets()
     if current_datasets:
         st.info(f"Found {len(current_datasets)} dataset files")
@@ -294,8 +299,17 @@ with col1:
     
     st.divider()
     
-    # ANALYSIS CONTROLS SECTION
+    # Analysis Controls section
     st.subheader("Analysis Controls")
+    
+    # Reset Filters thingy
+    if st.button("🔄 Reset All Filters", 
+                 help="Reset all analysis controls to their initial values", 
+                 type="secondary",
+                 use_container_width=True):
+        reset_filters()
+    
+    st.markdown("---") 
     
     # Metric selection dropdown
     selected_metric = st.selectbox(
@@ -309,6 +323,7 @@ with col1:
     # Region selection dropdown
     if df is not None:
         regions_list = sorted(df['Region'].unique())
+        # Get default region from session state or use first region
         default_region = st.session_state.get('selected_region', regions_list[0])
         if default_region not in regions_list:
             default_region = regions_list[0]
@@ -349,7 +364,7 @@ with col1:
             key='week_range'
         )
         
-        # SORTING OPTIONS
+        # Sorting options asc/desc
         st.subheader("Sorting Options")
         st.caption(f"Sort by {selected_metric} values (affects Filtered Data and Regional Comparison tabs)")
         
@@ -371,7 +386,7 @@ with col1:
         if sort_ascending and sort_descending:
             st.warning("⚠️ Both sorting options selected! Descending sort will take priority.")
             sort_by_metric = True
-            sort_ascending_flag = False
+            sort_ascending_flag = False  # Descending takes priority
         elif sort_descending:
             sort_by_metric = True
             sort_ascending_flag = False
@@ -380,7 +395,7 @@ with col1:
             sort_ascending_flag = True
         else:
             sort_by_metric = False
-            sort_ascending_flag = True
+            sort_ascending_flag = True  # Default
             
         # Show current sorting status
         if sort_by_metric:
@@ -389,15 +404,8 @@ with col1:
         else:
             st.info("📅 Default sorting: Chronological (Year, Week)")
         
-        # RESET FILTERS BUTTON - Moved under sorting options
-        st.markdown("---")
-        if st.button("🔄 Reset All Filters", 
-                     help="Reset all analysis controls to their initial values", 
-                     type="secondary",
-                     use_container_width=True):
-            reset_filters()
-        
     else:
+        # When no data
         selected_region = st.selectbox(
             "Select Region",
             options=["Load data first"],
@@ -405,7 +413,6 @@ with col1:
             help="Load data to see available regions"
         )
         
-        # Disabled sliders when no data
         year_range = st.slider(
             "Select Year Range",
             min_value=1981,
@@ -424,7 +431,6 @@ with col1:
             help="Load data to enable week selection"
         )
         
-        # Disabled sorting options when no data
         st.subheader("Sorting Options")
         st.caption("Load data to enable sorting")
         
@@ -440,7 +446,6 @@ with col1:
             help="Load data to enable sorting"
         )
         
-        # Default values when no data
         sort_by_metric = False
         sort_ascending_flag = True
 
@@ -449,14 +454,16 @@ with col2:
     
     # Display data status and load controls
     if current_datasets:
+        # Manual reload button (i needed it for debug and decided to keep)
         if st.button("Reload Data", help="Reload and reprocess all dataset files"):
+            # Clear cache to reload fresh data
             load_all_data.clear()
             st.rerun()
         
         if df is not None:
             st.success(f"Data loaded successfully! Total records: {len(df)}")
             
-            # DISPLAY BASIC STATISTICS
+            # Display basic statistics
             col_stat1, col_stat2, col_stat3 = st.columns(3)
             with col_stat1:
                 st.metric("Total Records", len(df))
@@ -465,13 +472,13 @@ with col2:
             with col_stat3:
                 st.metric("Regions", df['Region'].nunique())
             
-            # CREATE TABS FOR DIFFERENT VIEWS
+            # Tabs for different views
             tab1, tab2, tab3 = st.tabs(["📊 Filtered Data", "📈 Timeline Chart", "🔀 Regional Comparison"])
             
             with tab1:
                 st.subheader("Filtered Dataset Table")
                 
-                # Show sorting status in caption
+                # Sorting status in caption
                 if sort_by_metric:
                     sort_direction = "Ascending" if sort_ascending_flag else "Descending"
                     sort_info = f" | Sorted by {selected_metric} ({sort_direction})"
@@ -480,7 +487,7 @@ with col2:
                 
                 st.caption(f"Region: {selected_region} | Metric Focus: {selected_metric} | Years: {year_range[0]}-{year_range[1]} | Weeks: {week_range[0]}-{week_range[1]}{sort_info}")
                 
-                # APPLY ALL FILTERS TO THE DATA
+                # Apply all filters to the data
                 filtered_data = df[
                     (df['Region'] == selected_region) &
                     (df['Year'] >= year_range[0]) &
@@ -492,11 +499,13 @@ with col2:
                 if not filtered_data.empty:
                     # Apply sorting based on user selection
                     if sort_by_metric:
+                        # Sort by selected metric
                         filtered_data = filtered_data.sort_values(
                             [selected_metric, 'Year', 'Week'], 
                             ascending=[sort_ascending_flag, True, True]
                         ).reset_index(drop=True)
                     else:
+                        # Default chronological sorting
                         filtered_data = filtered_data.sort_values(['Year', 'Week']).reset_index(drop=True)
                     
                     # Show filtered data statistics
@@ -553,6 +562,7 @@ with col2:
                     st.warning(f"No data available for {selected_region} in the selected time range.")
                     st.info("Try adjusting the year or week range, or select a different region.")
                     
+                    # Show what filters are currently applied
                     st.write("**Current Filters:**")
                     st.write(f"- Region: {selected_region}")
                     st.write(f"- Years: {year_range[0]} to {year_range[1]}")
@@ -572,7 +582,7 @@ with col2:
                 ].copy()
                 
                 if not region_data.empty:
-                    # SORT BY YEAR AND WEEK FOR PROPER TIMELINE (NOT affected by sorting options)
+                    # Sort by year and week for proper timeline (NOT affected by sorting options)
                     region_data = region_data.sort_values(['Year', 'Week']).reset_index(drop=True)
                     
                     # Create the line chart
@@ -604,8 +614,9 @@ with col2:
                         showlegend=False
                     )
                     
-                    # Add reference lines
+                    # Add color coding based on values (I found these thingies to be useful)
                     if selected_metric in ['VCI', 'TCI', 'VHI']:
+                        # Add horizontal lines for reference
                         fig.add_hline(y=35, line_dash="dash", line_color="red", 
                                      annotation_text="Drought threshold (35)", annotation_position="bottom right")
                         fig.add_hline(y=50, line_dash="dash", line_color="orange", 
@@ -664,7 +675,7 @@ with col2:
                 ].copy()
                 
                 if not filtered_data.empty:
-                    # CALCULATE AVERAGE VALUES FOR EACH REGION
+                    # Calculate average values for each region
                     regional_averages = filtered_data.groupby('Region')[selected_metric].agg([
                         'mean', 'count', 'std', 'min', 'max'
                     ]).round(2)
@@ -673,8 +684,10 @@ with col2:
                     
                     # Apply sorting based on user selection
                     if sort_by_metric:
+                        # Sort by average value according to user choice
                         regional_averages = regional_averages.sort_values('Average', ascending=sort_ascending_flag)
                     else:
+                        # Default: sort by average value (descending - best first)
                         regional_averages = regional_averages.sort_values('Average', ascending=False)
                     
                     # Create colors - highlight selected region
