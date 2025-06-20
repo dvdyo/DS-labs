@@ -8,4 +8,5 @@ dependencies = [
     "marimo>=0.14.0",
     "numpy>=2.3.0",
     "pandas>=2.3.0",
+    "ucimlrepo>=0.0.7",
 ]
