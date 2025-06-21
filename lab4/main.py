@@ -10,47 +10,60 @@ def _():
     import numpy as np
     import pandas as pd
     import timeit
-    return mo, np, pd, timeit
+    from ucimlrepo import fetch_ucirepo
+    import warnings
+    from pandas.errors import DtypeWarning
+    return DtypeWarning, fetch_ucirepo, mo, np, pd, timeit, warnings
 
 
 @app.cell
-def _(np, pd):
-    print("Loading data with pandas...")
-    df_pandas = pd.read_csv('household_power_consumption.txt', 
-                           delimiter=';', 
-                           na_values='?',
-                           low_memory=False)
+def _(DtypeWarning, fetch_ucirepo, np, pd, warnings):
+    print("Fetching data from UCI repository...")
 
+    # The ucimlrepo loader is lazy and triggers a DtypeWarning
+    # Suppressin' it because our manual type conversion below handles the root cause
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DtypeWarning)
+        repo = fetch_ucirepo(id=235)
+
+    features = repo.data.features
+    targets = repo.data.targets
+
+    df_pandas = pd.concat([features, targets], axis=1)
+
+    numeric_fields = [
+        "Global_active_power", "Global_reactive_power", "Voltage",
+        "Global_intensity", "Sub_metering_1", "Sub_metering_2",
+        "Sub_metering_3"
+    ]
+
+    # Convert all '?' strings to numeric NaNs
+    for col in numeric_fields:
+        df_pandas[col] = pd.to_numeric(df_pandas[col], errors='coerce')
+
+    original_column_order = [
+        "Date", "Time", "Global_active_power", "Global_reactive_power",
+        "Voltage", "Global_intensity", "Sub_metering_1", "Sub_metering_2",
+        "Sub_metering_3"
+    ]
+    df_pandas = df_pandas[original_column_order]
+    print("DataFrame reconstructed successfully.")
+
+    print("\nProcessing data with pandas...")
     print(f"Original pandas shape: {df_pandas.shape}")
     print(f"Missing values per column:\n{df_pandas.isnull().sum()}")
-
     df_pandas_clean = df_pandas.dropna()
     print(f"Cleaned pandas shape: {df_pandas_clean.shape}")
 
-    print("\nLoading data with numpy...")
-    types = [("Date", "U10"), ("Time", "U8"), ("Global_active_power", "float64"), 
-             ("Global_reactive_power", "float64"), ("Voltage", "float64"), 
-             ("Global_intensity", "float64"), ("Sub_metering_1", "float64"), 
-             ("Sub_metering_2", "float64"), ("Sub_metering_3", "float64")]
-
-    df_numpy = np.genfromtxt("household_power_consumption.txt", 
-                            missing_values=["?", np.nan],
-                            delimiter=';', 
-                            dtype=types, 
-                            encoding="UTF-8", 
-                            names=True,
-                            invalid_raise=False)
+    print("\nProcessing data with numpy...")
+    df_pandas['Date'] = df_pandas['Date'].astype('U10')
+    df_pandas['Time'] = df_pandas['Time'].astype('U8')
+    df_numpy = df_pandas.to_records(index=False)
 
     print(f"Original numpy shape: {df_numpy.shape}")
-
-    # Numpy, boolean mask to filter out rows with NaNs
-    numeric_fields = ['Global_active_power', 'Global_reactive_power', 'Voltage', 
-                      'Global_intensity', 'Sub_metering_1', 'Sub_metering_2', 'Sub_metering_3']
-
     mask = np.ones(len(df_numpy), dtype=bool)
     for field in numeric_fields:
         mask &= ~np.isnan(df_numpy[field])
-
     df_numpy_clean = df_numpy[mask]
     print(f"Cleaned numpy shape: {df_numpy_clean.shape}")
 
